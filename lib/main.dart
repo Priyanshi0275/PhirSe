@@ -4,10 +4,18 @@ import 'package:flutter/services.dart';
 // Import the dashboard screen
 // You'll need to create a separate file called dashboard.dart and import it
 // import 'dashboard.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://hbpchtugxdxpssdwqfty.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicGNodHVneGR4cHNzZHdxZnR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMTY2OTEsImV4cCI6MjA2NjY5MjY5MX0.5BToc9lfv5OaYp8OMbwZRutSnHiXl7L9StonJ_2Wtcs',
+  );
   runApp(PhirSeApp());
 }
+
+
 
 class PhirSeApp extends StatelessWidget {
   @override
@@ -29,44 +37,20 @@ class LoginScreen extends StatefulWidget {
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
-
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
   final FocusNode _phoneFocusNode = FocusNode();
   bool _isLoading = false;
+  bool _otpSent = false;
+  final supabase = Supabase.instance.client;
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _otpController.dispose();
     _phoneFocusNode.dispose();
     super.dispose();
-  }
-
-  void _handleLogin() async {
-    if (_phoneController.text.length < 10) {
-      _showSnackBar('Please enter a valid phone number');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Simulate API call
-    await Future.delayed(Duration(seconds: 2));
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    // Navigate to Dashboard
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => DashboardScreen(
-          phoneNumber: '+91${_phoneController.text}',
-        ),
-      ),
-    );
   }
 
   void _showSnackBar(String message) {
@@ -80,13 +64,82 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Future<void> _handleLogin() async {
+    if (!_otpSent) {
+      // Send OTP
+      if (_phoneController.text.length != 10) {
+        _showSnackBar('Please enter a valid 10-digit phone number');
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      try {
+        final response = await supabase.auth.signInWithOtp(
+          phone: '+91${_phoneController.text.trim()}',
+        );
+        setState(() {
+          _otpSent = true;
+          _isLoading = false;
+        });
+        _showSnackBar('OTP sent to your number');
+      } catch (e) {
+        setState(() => _isLoading = false);
+        _showSnackBar('Error sending OTP: $e');
+      }
+    } else {
+      // Verify OTP
+      if (_otpController.text.trim().isEmpty) {
+        _showSnackBar('Please enter the OTP');
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      try {
+        final response = await supabase.auth.verifyOTP(
+          type: OtpType.sms,
+          token: _otpController.text.trim(),
+          phone: '+91${_phoneController.text.trim()}',
+        );
+
+        if (response.user != null) {
+          _showSnackBar('Login successful');
+          final user = supabase.auth.currentUser;
+if (user != null) {
+  final phone = user.phone;
+
+
+  await supabase.from('users').upsert({
+
+    'phone_number': phone,
+    'is_active': true,
+  });
+}
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => DashboardScreen(
+                phoneNumber: '+91${_phoneController.text}',
+              ),
+            ),
+          );
+        } else {
+          _showSnackBar('OTP verification failed');
+        }
+      } catch (e) {
+        _showSnackBar('Error verifying OTP: $e');
+      } finally {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final isSmallScreen = screenHeight < 700;
-    
+
     return Scaffold(
-      backgroundColor: Color(0xFF667eea), // Fallback color
+      backgroundColor: Color(0xFF667eea),
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -107,8 +160,8 @@ class _LoginScreenState extends State<LoginScreen> {
             physics: BouncingScrollPhysics(),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: MediaQuery.of(context).size.height - 
-                    MediaQuery.of(context).padding.top - 
+                minHeight: MediaQuery.of(context).size.height -
+                    MediaQuery.of(context).padding.top -
                     MediaQuery.of(context).padding.bottom,
               ),
               child: Padding(
@@ -117,12 +170,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Top Section - Logo and Welcome
+                    // 🩵 KEEPING YOUR LOGO + WELCOME UI EXACTLY AS IS
+                    // -----------------------------------------------
                     Column(
                       children: [
                         SizedBox(height: isSmallScreen ? 20 : 40),
-                        
-                        // Logo/Icon
                         Container(
                           width: isSmallScreen ? 90 : 120,
                           height: isSmallScreen ? 90 : 120,
@@ -143,10 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.white,
                           ),
                         ),
-                        
                         SizedBox(height: isSmallScreen ? 20 : 32),
-                        
-                        // Welcome Text
                         Text(
                           'Welcome to PhirSe',
                           textAlign: TextAlign.center,
@@ -157,10 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             letterSpacing: 1.2,
                           ),
                         ),
-                        
                         SizedBox(height: isSmallScreen ? 8 : 12),
-                        
-                        // Tagline
                         Text(
                           'Reorder made effortless,\njust a call away',
                           textAlign: TextAlign.center,
@@ -171,17 +217,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             fontWeight: FontWeight.w300,
                           ),
                         ),
-                        
                         SizedBox(height: isSmallScreen ? 30 : 50),
                       ],
                     ),
-                    
-                    // Login Form Card
+                    // -----------------------------------------------
+
+                    // LOGIN CARD
                     Container(
                       width: double.infinity,
-                      constraints: BoxConstraints(
-                        maxWidth: 400,
-                      ),
+                      constraints: BoxConstraints(maxWidth: 400),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
@@ -198,14 +242,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Phone Number Input
+                            // PHONE FIELD
                             Container(
                               decoration: BoxDecoration(
                                 color: Color(0xFFF8F9FA),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: _phoneFocusNode.hasFocus 
-                                      ? Color(0xFF6C5CE7) 
+                                  color: _phoneFocusNode.hasFocus
+                                      ? Color(0xFF6C5CE7)
                                       : Colors.transparent,
                                   width: 2,
                                 ),
@@ -247,15 +291,44 @@ class _LoginScreenState extends State<LoginScreen> {
                                     vertical: isSmallScreen ? 16 : 20,
                                   ),
                                 ),
-                                onChanged: (value) {
-                                  setState(() {});
-                                },
                               ),
                             ),
-                            
+
+                            SizedBox(height: isSmallScreen ? 16 : 20),
+
+                            // OTP FIELD (conditionally visible)
+                            if (_otpSent)
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Color(0xFFF8F9FA),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: TextField(
+                                  controller: _otpController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    hintText: 'Enter OTP',
+                                    hintStyle: TextStyle(
+                                      color: Color(0xFFA0AEC0),
+                                      fontWeight: FontWeight.w400,
+                                      fontSize: isSmallScreen ? 14 : 16,
+                                    ),
+                                    prefixIcon: Icon(
+                                      Icons.lock,
+                                      color: Color(0xFF6C5CE7),
+                                    ),
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: isSmallScreen ? 16 : 20,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
                             SizedBox(height: isSmallScreen ? 20 : 24),
-                            
-                            // Login Button
+
+                            // BUTTON
                             Container(
                               width: double.infinity,
                               height: isSmallScreen ? 50 : 56,
@@ -282,7 +355,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ),
                                       )
                                     : Text(
-                                        'Get Started',
+                                        _otpSent ? 'Verify OTP' : 'Get Started',
                                         style: TextStyle(
                                           fontSize: isSmallScreen ? 16 : 18,
                                           fontWeight: FontWeight.w600,
@@ -295,8 +368,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    
-                    // Footer
+
                     Padding(
                       padding: EdgeInsets.only(top: 20),
                       child: Text(
@@ -308,7 +380,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    
+
                     SizedBox(height: 20),
                   ],
                 ),
@@ -320,6 +392,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
 
 class DashboardScreen extends StatefulWidget {
   final String phoneNumber;
@@ -1464,6 +1537,100 @@ class InsightsTab extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final phoneController = TextEditingController();
+  final otpController = TextEditingController();
+
+  bool isOtpSent = false;
+  String phone = '';
+
+  Future<void> sendOtp() async {
+    try {
+      final formattedPhone = '+91${phoneController.text.trim()}'; // Adjust for India
+      await Supabase.instance.client.auth.signInWithOtp(
+        phone: formattedPhone,
+      );
+      setState(() {
+        isOtpSent = true;
+        phone = formattedPhone;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending OTP: $e')),
+      );
+    }
+  }
+
+  Future<void> verifyOtp() async {
+    try {
+      await Supabase.instance.client.auth.verifyOTP(
+        type: OtpType.sms,
+        phone: phone,
+        token: otpController.text.trim(),
+      );
+      Navigator.pushReplacementNamed(context, '/dashboard');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invalid OTP: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Color(0xFFF3F4F6),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'PhirSe',
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 20),
+              if (!isOtpSent)
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'Enter your phone number',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              if (isOtpSent)
+                TextField(
+                  controller: otpController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Enter OTP',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: isOtpSent ? verifyOtp : sendOtp,
+                child: Text(isOtpSent ? 'Verify OTP' : 'Send OTP'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
